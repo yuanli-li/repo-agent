@@ -1,0 +1,15 @@
+from dataclasses import dataclass
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+
+@dataclass
+class Settings:
+    model_name: str = os.getenv("MODEL_NAME", "")
+    max_steps: int = int(os.getenv("MAX_STEPS", "6"))
+    repo_root: str = os.getenv("REPO_ROOT", "./sandbox/sample_repo")
+
+
+settings = Settings()
