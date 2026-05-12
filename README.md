@@ -10,6 +10,3 @@ A minimal repo agent project for learning AI agent fundamentals.
 - get ready for a minimal agent loop
 
 ## Run
-
-```bash
-python main.py

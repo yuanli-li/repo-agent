@@ -169,3 +169,99 @@ After today, I have a working loop.
 It is still minimal, but the architecture is now real:
 
 model decision → tool execution → observation → next decision
+
+```mermaid
+flowchart TD
+    A["CLI Input<br/>python main.py 'Where is the auth logic?'"] --> B[main.py]
+    B --> C["Read config.py<br/>repo_root / max_steps / use_mock_llm"]
+    C --> D[Initialize RepoAgent]
+    D --> E["agent.run(user_task)"]
+
+    E --> F["Initialize messages<br/>messages = user task"]
+    F --> G["Enter agent loop<br/>for step in range(max_steps)"]
+
+    G --> H["Invoke call_model(messages, system_prompt, tools)"]
+    H --> I{"Model Decision Type?"}
+
+    I -->|tool_call| J[Return tool name + arguments]
+    I -->|final| K[Return final answer and stop]
+
+    J --> L[agent.py supplements system params like repo_root]
+    L --> M["tool_registry.execute_tool(name, arguments)"]
+
+    M --> N{"Which tool to call?"}
+    N -->|read_file| O[read_file.py]
+    N -->|search_code| P[search_code.py]
+    N -->|run_command| Q[run_command.py]
+
+    O --> R[Receive tool result]
+    P --> R
+    Q --> R
+
+    R --> S[Append TOOL_CALL_JSON back to messages]
+    S --> T[Append TOOL_RESULT_JSON back to messages]
+    T --> U["Enter next iteration of call_model()"]
+    U --> G
+
+    K --> V[main.py prints FINAL RESULT]
+```
+
+
+### 例子展示：Where is the auth logic in this repo?
+```mermaid
+flowchart TD
+    A["User Task<br/>Where is the auth logic in this repo?"] --> B["main.py passes task to RepoAgent.run()"]
+    B --> C["agent.py initializes messages"]
+    C --> D["messages contains only the user task"]
+
+    D --> E["Step 1: call_model()"]
+    E --> F["Mock LLM detects keywords: auth / verify_token"]
+    F --> G["Returns tool_call<br/>name=search_code<br/>arguments={query: verify_token}"]
+
+    G --> H["agent.py executes execute_tool(search_code, args)"]
+    H --> I["search_code.py runs: rg -n verify_token repo_root"]
+    I --> J["Tool result returned<br/>matches found in app.py / test_auth.py / auth.py"]
+
+    J --> K["agent.py appends TOOL_CALL_JSON to messages"]
+    K --> L["agent.py appends TOOL_RESULT_JSON to messages"]
+
+    L --> M["Step 2: Second call_model()"]
+    M --> N["Mock LLM sees auth.py in recent tool_result"]
+    N --> O["Returns tool_call<br/>name=read_file<br/>arguments={path: auth.py}"]
+
+    O --> P["agent.py executes execute_tool(read_file, args)"]
+    P --> Q["read_file.py reads auth.py lines 1-7"]
+    Q --> R["Tool result returned<br/>contains verify_token(token) implementation"]
+
+    R --> S["Append TOOL_CALL_JSON to messages again"]
+    S --> T["Append TOOL_RESULT_JSON to messages again"]
+
+    T --> U["Step 3: Third call_model()"]
+    U --> V["Mock LLM determines info is sufficient"]
+    V --> W["Returns final"]
+    W --> X["agent.py stops loop"]
+    X --> Y["main.py prints FINAL RESULT"]
+```
+
+第二个真实例子：Run the tests for this project
+
+```mermaid
+flowchart TD
+    A["User Task<br/>Run the tests for this project"] --> B["agent.py initializes messages"]
+    B --> C["Step 1: call_model()"]
+    C --> D["Mock LLM identifies keywords: test / pytest"]
+    D --> E["Returns tool_call<br/>name=run_command<br/>arguments={command: pytest}"]
+
+    E --> F["agent.py executes execute_tool(run_command, args)"]
+    F --> G["run_command.py checks command against allowlist"]
+    G --> H["Execution of pytest allowed"]
+    H --> I["Run pytest in repo_root"]
+    I --> J["Tool result returned<br/>3 passed"]
+
+    J --> K["Append TOOL_CALL_JSON"]
+    K --> L["Append TOOL_RESULT_JSON"]
+    L --> M["Step 2: Second call_model()"]
+    M --> N["Mock LLM determines test results are sufficient"]
+    N --> O["Returns final"]
+    O --> P["agent.py stops"]
+```

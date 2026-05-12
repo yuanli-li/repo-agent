@@ -1,4 +1,3 @@
-Day 1 Notes
 1. Key Takeaways
 LLMs do not actually call tools: I learned that the model itself cannot interact with the external world; it only generates the intent to do so.
 
