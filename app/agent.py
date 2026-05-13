@@ -3,9 +3,13 @@ from typing import Any, Dict, List
 
 from app.config import settings
 from app.prompts import SYSTEM_PROMPT
-from app.llm_client import call_model
 from app.tool_registry import execute_tool, get_tool_schemas
 from app.logger import StepLogger
+from app.llm_client import (
+    call_model,
+    should_programmatic_finalize,
+    build_programmatic_final,
+)
 
 
 class RepoAgent:
@@ -169,6 +173,30 @@ class RepoAgent:
                     "tool_result": tool_result,
                     "tool_result_summary": tool_result_summary,
                 })
+
+                # NEW: programmatic final for selected tools
+                if should_programmatic_finalize(tool_name):
+                    final_decision = build_programmatic_final(
+                        tool_name, tool_result, user_task)
+                    final_answer = final_decision["content"]
+
+                    messages.append({
+                        "role": "assistant",
+                        "content": final_answer
+                    })
+
+                    self.logger.log_step({
+                        "event_type": "agent_stop",
+                        "step_id": step,
+                        "stop_reason": "programmatic_final",
+                        "tool_name": tool_name,
+                        "final_answer": final_answer,
+                        "message_count": len(messages),
+                    })
+
+                    print("\n=== AGENT FINAL (PROGRAMMATIC) ===")
+                    print(final_answer)
+                    return final_answer
 
                 self._append_tool_result(
                     messages=messages,

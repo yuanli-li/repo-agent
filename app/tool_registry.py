@@ -1,12 +1,14 @@
 from app.tools.read_file import read_file
 from app.tools.search_code import search_code
 from app.tools.run_command import run_command
+from app.tools.find_file import find_file
 
 
 TOOLS = {
     "read_file": read_file,
     "search_code": search_code,
     "run_command": run_command,
+    "find_file": find_file,
 }
 
 
@@ -37,6 +39,13 @@ def get_tool_schemas() -> list[dict]:
             "description": "Run a safe allowlisted shell command inside the repository.",
             "arguments": {
                 "command": "str, required, one of the allowlisted commands",
+            },
+        },
+        {
+            "name": "find_file",
+            "description": "Find files whose relative path matches a file name or keyword. Use this to locate files like README, auth.py, tests, or config files before reading them.",
+            "arguments": {
+                "pattern": "str, required, name or pattern to search for",
             },
         },
     ]

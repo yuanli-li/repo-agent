@@ -1,7 +1,8 @@
 import json
 import re
 from typing import Any, Dict, List
-
+from app.config import settings
+from openai import OpenAI
 from app.config import settings
 
 
@@ -109,6 +110,10 @@ def _grounded_final_from_tool_result(
         summary = _summarize_command_result(tool_result, user_task)
         return {"type": "final", "content": summary}
 
+    if tool_name == "find_file":
+        summary = _summarize_find_file_result(tool_result, user_task)
+        return {"type": "final", "content": summary}
+
     return {
         "type": "final",
         "content": "I completed the last tool step, but I do not yet have a grounded summary for this tool type."
@@ -198,30 +203,42 @@ def _call_real_model_as_text(
     tools: List[Dict[str, Any]]
 ) -> str:
     """
-    Placeholder for real provider integration.
+    Minimal OpenAI implementation for Day 5.
 
-    Day 3 recommendation:
-    keep this unimplemented, or implement your chosen provider later
-    while preserving the same return contract.
-
-    It should return raw text that is a JSON object string.
+    Strategy:
+    - keep the current JSON-text contract
+    - do NOT use native function calling yet
+    - ask the model to return exactly one JSON object
     """
+    if settings.model_provider != "openai":
+        raise ValueError(
+            f"Unsupported model provider for this function: {settings.model_provider}")
+
+    if not settings.openai_api_key:
+        raise ValueError(
+            "OPENAI_API_KEY is missing. Please set it in your environment.")
+
+    client = OpenAI(api_key=settings.openai_api_key)
+
     transcript = _render_messages_as_text(messages)
 
     combined_prompt = (
-        system_prompt
-        + "\n\nAVAILABLE TOOLS:\n"
-        + json.dumps(tools, indent=2)
-        + "\n\nCONVERSATION:\n"
-        + transcript
-        + "\n\nReturn exactly one JSON object."
+        f"{system_prompt}\n\n"
+        "AVAILABLE TOOLS:\n"
+        f"{json.dumps(tools, indent=2)}\n\n"
+        "CONVERSATION:\n"
+        f"{transcript}\n\n"
+        "Return exactly one JSON object.\n"
+        "Do not wrap it in markdown.\n"
+        "Do not add commentary before or after the JSON.\n"
     )
 
-    raise NotImplementedError(
-        "Day 4 recommendation: keep USE_MOCK_LLM=true while validating logging "
-        "and grounded final synthesis.\n\n"
-        f"Prompt preview:\n{combined_prompt[:1000]}"
+    response = client.responses.create(
+        model=settings.model_name,
+        input=combined_prompt,
     )
+
+    return response.output_text
 
 
 def call_model(
@@ -241,6 +258,15 @@ def call_model(
 
     raw_text = _call_real_model_as_text(messages, system_prompt, tools)
     parsed = _extract_json(raw_text)
+    known_tool_names = {tool["name"] for tool in tools}
+    parsed_type = parsed.get("type")
+
+    if parsed_type in known_tool_names:
+        parsed = {
+            "type": "tool_call",
+            "name": parsed_type,
+            "arguments": parsed.get("arguments", {})
+        }
 
     if parsed.get("type") == "tool_call":
         if "name" not in parsed or "arguments" not in parsed:
@@ -430,3 +456,27 @@ def _summarize_command_result(tool_result: Dict[str, Any], user_task: str) -> st
             parts.append(f"Output preview: {preview}")
 
     return " ".join(parts)
+
+
+def _summarize_find_file_result(tool_result: Dict[str, Any], user_task: str) -> str:
+    pattern = tool_result.get("pattern", "")
+    matches = tool_result.get("matches", [])
+    match_count = tool_result.get("match_count", len(matches))
+
+    if not matches:
+        return f"I searched the repository for files matching `{pattern}`, but did not find any."
+    if match_count > len(matches):
+        return f"I searched the repository for files matching `{pattern}` and found {match_count} matches, showing the first {len(matches)}: " + "; ".join(matches)
+    return f"I searched the repository for files matching `{pattern}` and found {match_count} matches: " + "; ".join(matches)
+
+
+def should_programmatic_finalize(tool_name: str) -> bool:
+    return tool_name in {"read_file", "run_command"}
+
+
+def build_programmatic_final(
+    tool_name: str,
+    tool_result: Dict[str, Any],
+    user_task: str
+) -> Dict[str, Any]:
+    return _grounded_final_from_tool_result(tool_name, tool_result, user_task)
